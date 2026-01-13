@@ -1,0 +1,24 @@
+# Visual Studio spezifische Dateien
+.vs/
+*.vsix
+*.suo
+*.user
+*.userosscache
+*.sln.docstates
+
+# Python Dateien
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.Python
+env/
+venv/
+.env
+*.log
+
+echo "annotated_video.mp4" >> .gitignore
+echo "*.mp4" >> .gitignore
+echo "*.avi" >> .gitignore
+echo "*.mov" >> .gitignore
+echo "*.mkv" >> .gitignore
