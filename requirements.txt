@@ -1,7 +1,6 @@
 # Specific versions for better compatibility
 streamlit
 mediapipe
-opencv-python-headless
 numpy==1.26.4
 pandas
 matplotlib
