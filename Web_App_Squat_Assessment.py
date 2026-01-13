@@ -11,7 +11,9 @@ from dataclasses import dataclass
 from typing import List, Dict, Tuple, Optional
 from scipy.stats import pearsonr
 import math
-
+print(st.__version__)
+print(cv2.__version__)
+print(mp.__version__)
 # --- MEDIA PIPE UTILS ---
 from mediapipe.python.solutions import pose as mp_pose
 from mediapipe.python.solutions import drawing_utils as mp_drawing
