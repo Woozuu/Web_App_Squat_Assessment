@@ -1,6 +1,6 @@
 # Specific versions for better compatibility
 streamlit
-mediapipe==0.9.3.0
+mediapipe
 numpy==1.26.4
 pandas
 matplotlib
