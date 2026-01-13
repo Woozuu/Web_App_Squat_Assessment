@@ -15,9 +15,16 @@ print(st.__version__)
 print(cv2.__version__)
 print(mp.__version__)
 # --- MEDIA PIPE UTILS ---
-from mediapipe.python.solutions import pose as mp_pose
-from mediapipe.python.solutions import drawing_utils as mp_drawing
-from mediapipe.python.solutions import drawing_styles as mp_drawing_styles
+# --- SAFE MediaPipe Solution Access ---
+if hasattr(mp, "solutions"):
+    mp_pose = mp.solutions.pose
+    mp_drawing = mp.solutions.drawing_utils
+else:
+    # Fallback for mediapipe >= 0.10.x (Streamlit Cloud)
+    import importlib
+
+    mp_pose = importlib.import_module("mediapipe.solutions.pose")
+    mp_drawing = importlib.import_module("mediapipe.solutions.drawing_utils")
 
 # ==========================================
 # 1. DATA STRUCTURES (From original design)
