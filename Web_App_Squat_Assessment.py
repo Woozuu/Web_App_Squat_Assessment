@@ -226,131 +226,104 @@ class GradingEngine:
 # 3. STREAMLIT UI
 # ==========================================
 
+# Streamlit UI Setup
 st.set_page_config(page_title="Squat AI Pro", layout="wide")
-st.title("Squat Form Analyzer")
+st.title("Squat Form AI Analyzer")
 st.sidebar.header("Upload Workout")
 uploaded_file = st.sidebar.file_uploader("Choose a video file", type=['mp4', 'mov', 'avi'])
 
 if uploaded_file is not None:
-    # Save uploaded file to temp
-    tfile = tempfile.NamedTemporaryFile(delete=False)
-    tfile.write(uploaded_file.read())
+    # 1. DEFINE PATHS FIRST
+    temp_input_path = "temp_input_video.mp4"
+    temp_output_path = "temp_output_video.mp4"
+
+    # 2. SAVE UPLOADED FILE
+    with open(temp_input_path, "wb") as f:
+        f.write(uploaded_file.read())
     
-    col1, col2 = st.columns([1, 1])
+    if os.path.exists(temp_input_path):
+        col1, col2 = st.columns([1, 1])
 
-    with st.spinner('Analyzing movement...'):
-        # 1. Process
-        processor = PoseProcessor()
-        pose_data, fps = processor.process_video(tfile.name)
-        
-        # 2. Analyze
-        analyzer = BiomechanicalAnalyzer()
-        metrics, reps = analyzer.analyze(pose_data, fps)
-        
-        # 3. Grade
-        grader = GradingEngine()
-        summary = grader.grade(reps)
+        # 3. RUN ANALYSIS
+        with st.spinner('Analyzing movement...'):
+            processor = PoseProcessor()
+            pose_data, fps = processor.process_video(temp_input_path)
+            
+            analyzer = BiomechanicalAnalyzer()
+            metrics, reps = analyzer.analyze(pose_data, fps)
+            
+            grader = GradingEngine()
+            summary = grader.grade(reps)
 
-    with col1:
-        st.subheader("Form Assessment")
-        # Radar Chart
-        categories = list(summary.radar_scores.keys())
-        values = list(summary.radar_scores.values())
-        values += values[:1]
-        angles = np.linspace(0, 2*np.pi, len(categories), endpoint=False).tolist()
-        angles += angles[:1]
+        # 4. DISPLAY RESULTS (LEFT COLUMN)
+        with col1:
+            st.subheader("Form Assessment")
+            categories = list(summary.radar_scores.keys())
+            values = list(summary.radar_scores.values())
+            values += values[:1]
+            angles = np.linspace(0, 2*np.pi, len(categories), endpoint=False).tolist()
+            angles += angles[:1]
 
-        fig, ax = plt.subplots(figsize=(5, 5), subplot_kw=dict(polar=True))
-        ax.fill(angles, values, color='teal', alpha=0.3)
-        ax.plot(angles, values, color='teal', linewidth=2)
-        ax.set_xticks(angles[:-1])
-        ax.set_xticklabels(categories)
-        st.pyplot(fig)
+            fig, ax = plt.subplots(figsize=(5, 5), subplot_kw=dict(polar=True))
+            ax.fill(angles, values, color='teal', alpha=0.3)
+            ax.plot(angles, values, color='teal', linewidth=2)
+            ax.set_xticks(angles[:-1])
+            ax.set_xticklabels(categories)
+            st.pyplot(fig)
 
-        st.metric("Overall Score", f"{int(summary.overall_score)}%", summary.letter_grade)
-        st.write(f"Total Reps Detected: {len(reps)}")
+            st.metric("Overall Score", f"{int(summary.overall_score)}%", summary.letter_grade)
+            
+            st.divider()
+            st.subheader("Coaching Insights")
+            raw = summary.raw_averages
+            c1, c2, c3 = st.columns(3)
+            with c1:
+                st.write(f"**Depth:** {int(raw['Depth'])} degrees")
+                if raw['Depth'] > 100: st.warning("Target deeper squats.")
+                else: st.success("Optimal depth.")
+                st.write(f"**Trunk Lean:** {int(raw['Trunk'])} degrees")
+            with c2:
+                st.write(f"**Down Tempo:** {raw['Ecc Tempo']:.1f}s")
+                if raw['Ecc Tempo'] < 2.0: st.error("Descent too fast.")
+                else: st.success("Good control.")
+                st.write(f"**Up Tempo:** {raw['Conc Tempo']:.1f}s")
+            with c3:
+                st.write(f"**Sync Score:** {int(raw['Sync'])}/100")
+                if raw['Sync'] < 75: st.error("Hips rising too fast.")
+                else: st.success("Good synchronization.")
+                st.write(f"**Heel Stability:** {int(raw['Heel Lifts'])} lifts")
+                if raw['Heel Lifts'] > 0: st.error("Heels lifting detected.")
+                else: st.success("Heels stable.")
 
-        st.divider()
-        st.subheader("Coaching Insights")
-        
-        raw = summary.raw_averages
-        
-        # Displaying metrics in three columns for better layout
-        c1, c2, c3 = st.columns(3)
-        
-        with c1:
-            st.write(f"**Depth:** {int(raw['Depth'])} degrees")
-            if raw['Depth'] > 100:
-                st.warning("Increase depth. Target thighs parallel to the floor.")
-            else:
-                st.success("Optimal depth achieved.")
-
-            st.write(f"**Trunk Lean:** {int(raw['Trunk'])} degrees")
-            if raw['Trunk'] > 45:
-                st.warning("Keep chest higher. Torso is leaning too far forward.")
-            else:
-                st.success("Torso angle is stable.")
-
-        with c2:
-            st.write(f"**Down Tempo:** {raw['Ecc Tempo']:.1f}s")
-            if raw['Ecc Tempo'] < 2.0:
-                st.error("Descent is too fast. Control the weight for 2-3 seconds.")
-            elif raw['Ecc Tempo'] > 4.5:
-                st.warning("Descent is very slow. This may cause premature fatigue.")
-            else:
-                st.success("Excellent descent control.")
-
-            st.write(f"**Up Tempo:** {raw['Conc Tempo']:.1f}s")
-            if raw['Conc Tempo'] > 3.0:
-                st.warning("Ascent is slow. Work on explosive power coming out of the hole.")
-            else:
-                st.success("Good upward drive.")
-
-        with c3:
-            st.write(f"**Sync Score:** {int(raw['Sync'])}/100")
-            if raw['Sync'] < 70:
-                st.error("Hips are rising faster than shoulders. Drive both up simultaneously.")
-            elif raw['Sync'] < 85:
-                st.warning("Slight lag between hip and shoulder drive.")
-            else:
-                st.success("Perfect hip-shoulder synchronization.")
-
-            st.write(f"**Heel Stability:** {int(raw['Heel Lifts'])} lifts detected")
-            if raw['Heel Lifts'] > 0:
-                st.error(f"Heel lift detected on {int(raw['Heel Lifts'])} repetitions.")
-            else:
-                st.success("Heels remained stable.")
-
-    with col2:
+        # 5. GENERATE VIDEO (RIGHT COLUMN)
+        with col2:
             st.subheader("Visual Feedback")
             cap = cv2.VideoCapture(temp_input_path)
             
-            # Change codec to mp4v for better Linux compatibility
+            # Using mp4v for high compatibility with headless opencv
             fourcc = cv2.VideoWriter_fourcc(*'mp4v') 
-            
             width = int(cap.get(cv2.CAP_PROP_FRAME_WIDTH))
             height = int(cap.get(cv2.CAP_PROP_FRAME_HEIGHT))
-            fps = cap.get(cv2.CAP_PROP_FPS)
-            
-            # If FPS is invalid, default to 30
-            if fps <= 0: fps = 30 
+            video_fps = cap.get(cv2.CAP_PROP_FPS)
+            if video_fps <= 0: video_fps = 30
 
-            out = cv2.VideoWriter(temp_output_path, fourcc, fps, (width, height))
+            out = cv2.VideoWriter(temp_output_path, fourcc, video_fps, (width, height))
 
             pose_map = {p.frame_index: p for p in pose_data}
             metric_map = {m.frame_index: m for m in metrics}
 
-            # Loop through the video frames
-            for f_idx in range(int(cap.get(cv2.CAP_PROP_FRAME_COUNT))):
+            # Progress for video creation
+            video_progress = st.progress(0)
+            total_frames = int(cap.get(cv2.CAP_PROP_FRAME_COUNT))
+
+            for f_idx in range(total_frames):
                 ret, frame = cap.read()
                 if not ret: break
                 
                 # Draw skeleton
                 if f_idx in pose_map:
                     mp_drawing.draw_landmarks(
-                        frame, 
-                        pose_map[f_idx].raw_landmarks, 
-                        mp_pose.POSE_CONNECTIONS,
+                        frame, pose_map[f_idx].raw_landmarks, mp_pose.POSE_CONNECTIONS,
                         landmark_drawing_spec=mp_drawing_styles.get_default_pose_landmarks_style()
                     )
                 
@@ -359,16 +332,22 @@ if uploaded_file is not None:
                     m = metric_map[f_idx]
                     cv2.putText(frame, f"Phase: {m.phase}", (30, 50), 
                                 cv2.FONT_HERSHEY_SIMPLEX, 1, (255, 255, 255), 2)
+                    if m.heel_lift:
+                        cv2.putText(frame, "HEEL LIFT!", (30, 100), 
+                                    cv2.FONT_HERSHEY_SIMPLEX, 1, (0, 0, 255), 2)
                 
                 out.write(frame)
-            
+                if f_idx % 10 == 0:
+                    video_progress.progress(f_idx / total_frames)
+
             cap.release()
             out.release()
-            
-            # Display the video
+            video_progress.empty()
+
+            # Display the video file
             if os.path.exists(temp_output_path):
                 st.video(temp_output_path)
             
-    st.sidebar.success("Analysis Finished!")
+        st.sidebar.success("Analysis Finished")
 else:
-    st.info("Please upload a lateral-view video of your squats to begin.")
+    st.info("Please upload a lateral-view video to begin.")
