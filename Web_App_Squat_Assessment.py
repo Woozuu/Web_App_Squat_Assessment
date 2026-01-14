@@ -323,41 +323,103 @@ if uploaded_file is not None:
                 st.success("Heels remained stable.")
 
     with col2:
-        st.subheader("Visual Feedback")
-        
-        # Option 1: Display annotated frames as images (more reliable)
-        # Option 2: Try different codecs or use MP4V
-        
-        # Create a temporary file for annotated video
-        output_path = tempfile.NamedTemporaryFile(delete=False, suffix='.mp4').name
-        
-        cap = cv2.VideoCapture(tfile.name)
-        # Try different codecs - 'mp4v' is more universally available
-        #fourcc = cv2.VideoWriter_fourcc(*'mp4v')  
-        # Alternative codecs to try:
-        # fourcc = cv2.VideoWriter_fourcc(*'XVID')  # for .avi
-        fourcc = cv2.VideoWriter_fourcc(*'H264')  # alternative H.264 codec
-        
-        width, height = int(cap.get(3)), int(cap.get(4))
-        fps = int(cap.get(cv2.CAP_PROP_FPS))
-        
-        # Ensure width and height are even numbers (some codecs require this)
-        if width % 2 != 0: width -= 1
-        if height % 2 != 0: height -= 1
-        
-        out = cv2.VideoWriter(output_path, fourcc, fps, (width, height))
-
+    st.subheader("Visual Feedback")
+    
+    # Create annotated video
+    output_path = tempfile.NamedTemporaryFile(delete=False, suffix='.mp4').name
+    
+    cap = cv2.VideoCapture(tfile.name)
+    fps = int(cap.get(cv2.CAP_PROP_FPS))
+    width = int(cap.get(cv2.CAP_PROP_FRAME_WIDTH))
+    height = int(cap.get(cv2.CAP_PROP_FRAME_HEIGHT))
+    
+    # Option 1: Try different H.264 codec options
+    # 'avc1' might not work, try 'h264' or use imageio
+    fourcc_options = [
+        cv2.VideoWriter_fourcc(*'H264'),  # Try uppercase H264
+        cv2.VideoWriter_fourcc(*'X264'),  # Alternative
+        cv2.VideoWriter_fourcc(*'mp4v'),  # Then convert
+    ]
+    
+    success = False
+    out = None
+    
+    for fourcc_code in fourcc_options:
+        try:
+            out = cv2.VideoWriter(output_path, fourcc_code, fps, (width, height))
+            if out.isOpened():
+                success = True
+                st.info(f"Using codec: {fourcc_code}")
+                break
+        except:
+            continue
+    
+    # If OpenCV codecs fail, use imageio (recommended for Streamlit Cloud)
+    if not success:
+        st.info("Using imageio for video creation (HTML5 compatible)")
+        try:
+            import imageio.v3 as iio
+            
+            pose_map = {p.frame_index: p for p in pose_data}
+            metric_map = {m.frame_index: m for m in metrics}
+            
+            # Read all frames and process
+            frames = []
+            total_frames = int(cap.get(cv2.CAP_PROP_FRAME_COUNT))
+            
+            progress_bar = st.progress(0)
+            
+            for f_idx in range(total_frames):
+                ret, frame = cap.read()
+                if not ret: 
+                    break
+                
+                if f_idx in pose_map:
+                    mp_drawing.draw_landmarks(
+                        frame, 
+                        pose_map[f_idx].raw_landmarks, 
+                        mp_pose.POSE_CONNECTIONS,
+                        landmark_drawing_spec=mp_drawing_styles.get_default_pose_landmarks_style()
+                    )
+                
+                if f_idx in metric_map:
+                    m = metric_map[f_idx]
+                    cv2.putText(frame, f"Phase: {m.phase}", (30, 50), 
+                              cv2.FONT_HERSHEY_SIMPLEX, 1, (255, 255, 255), 2)
+                    if m.heel_lift: 
+                        cv2.putText(frame, "HEEL LIFT!", (30, 100), 
+                                  cv2.FONT_HERSHEY_SIMPLEX, 1, (0, 0, 255), 2)
+                
+                # Convert BGR to RGB
+                frame_rgb = cv2.cvtColor(frame, cv2.COLOR_BGR2RGB)
+                frames.append(frame_rgb)
+                
+                # Update progress
+                if f_idx % 10 == 0:
+                    progress_bar.progress(min(f_idx / total_frames, 1.0))
+            
+            cap.release()
+            progress_bar.empty()
+            
+            # Write with imageio (creates HTML5 compatible video)
+            iio.imwrite(output_path, frames, fps=fps, codec='libx264')
+            success = True
+            
+        except Exception as e:
+            st.error(f"Imageio failed: {str(e)}")
+    
+    # If using OpenCV VideoWriter
+    if out and out.isOpened():
         pose_map = {p.frame_index: p for p in pose_data}
         metric_map = {m.frame_index: m for m in metrics}
-
-        frame_count = 0
-        progress_bar = st.progress(0)
         
         total_frames = int(cap.get(cv2.CAP_PROP_FRAME_COUNT))
+        progress_bar = st.progress(0)
         
         for f_idx in range(total_frames):
             ret, frame = cap.read()
-            if not ret: break
+            if not ret: 
+                break
             
             if f_idx in pose_map:
                 mp_drawing.draw_landmarks(
@@ -376,35 +438,37 @@ if uploaded_file is not None:
                               cv2.FONT_HERSHEY_SIMPLEX, 1, (0, 0, 255), 2)
             
             out.write(frame)
-            frame_count += 1
             
-            # Update progress every 10 frames to avoid too many updates
             if f_idx % 10 == 0:
                 progress_bar.progress(min(f_idx / total_frames, 1.0))
         
         cap.release()
         out.release()
         progress_bar.empty()
-        
-        # Display Video - using a try-except block
-        try:
-            if os.path.exists(output_path) and os.path.getsize(output_path) > 0:
-                st.video(output_path)
-            else:
-                st.warning("Could not generate annotated video. Displaying original video instead.")
-                st.video(tfile.name)
-        except Exception as e:
-            st.warning(f"Video display error: {str(e)}")
-            st.video(tfile.name)  # Fallback to original video
-            
-    st.sidebar.success("Analysis Finished!")
     
-    # Clean up temp files
+    # Display the video if successful
+    if success and os.path.exists(output_path) and os.path.getsize(output_path) > 0:
+        # Read video bytes for display
+        with open(output_path, 'rb') as f:
+            video_bytes = f.read()
+        
+        # Display video
+        st.video(video_bytes)
+        
+        # Download button
+        st.download_button(
+            label="📥 Download Annotated Video",
+            data=video_bytes,
+            file_name="squat_analysis.mp4",
+            mime="video/mp4"
+        )
+    else:
+        st.warning("Could not generate annotated video. Showing original.")
+        st.video(tfile.name)
+    
+    # Cleanup
     try:
-        os.unlink(tfile.name)
         if os.path.exists(output_path):
             os.unlink(output_path)
     except:
         pass
-else:
-    st.info("Please upload a lateral-view video of your squats to begin.")
