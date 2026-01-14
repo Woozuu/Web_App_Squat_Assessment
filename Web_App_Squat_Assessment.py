@@ -232,29 +232,30 @@ st.sidebar.header("Upload Workout")
 uploaded_file = st.sidebar.file_uploader("Choose a video file", type=['mp4', 'mov', 'avi'])
 
 if uploaded_file is not None:
-    # Save uploaded file to temp
-    tfile = tempfile.NamedTemporaryFile(delete=False, suffix='.mp4')
-    tfile.write(uploaded_file.read())
-    tfile.flush()  # Ensure file is written
+    # 1. Define paths immediately
+    temp_input_path = "input_video.mp4"
+    temp_raw_output = "raw_annotated.mp4"
+    final_web_path = "final_output.mp4"
+
+    # 2. Save uploaded file to disk
+    with open(temp_input_path, "wb") as f:
+        f.write(uploaded_file.read())
     
     col1, col2 = st.columns([1, 1])
 
     with st.spinner('Analyzing movement...'):
-        # 1. Process
         processor = PoseProcessor()
-        pose_data, fps = processor.process_video(tfile.name)
+        pose_data, fps = processor.process_video(temp_input_path)
         
-        # 2. Analyze
         analyzer = BiomechanicalAnalyzer()
         metrics, reps = analyzer.analyze(pose_data, fps)
         
-        # 3. Grade
         grader = GradingEngine()
         summary = grader.grade(reps)
 
+    # col1 stays exactly as you requested
     with col1:
         st.subheader("Form Assessment")
-        # Radar Chart
         categories = list(summary.radar_scores.keys())
         values = list(summary.radar_scores.values())
         values += values[:1]
@@ -275,8 +276,6 @@ if uploaded_file is not None:
         st.subheader("Coaching Insights")
         
         raw = summary.raw_averages
-        
-        # Displaying metrics in three columns for better layout
         c1, c2, c3 = st.columns(3)
         
         with c1:
@@ -285,7 +284,6 @@ if uploaded_file is not None:
                 st.warning("Increase depth. Target thighs parallel to the floor.")
             else:
                 st.success("Optimal depth achieved.")
-
             st.write(f"**Trunk Lean:** {int(raw['Trunk'])} degrees")
             if raw['Trunk'] > 45:
                 st.warning("Keep chest higher. Torso is leaning too far forward.")
@@ -300,7 +298,6 @@ if uploaded_file is not None:
                 st.warning("Descent is very slow. This may cause premature fatigue.")
             else:
                 st.success("Excellent descent control.")
-
             st.write(f"**Up Tempo:** {raw['Conc Tempo']:.1f}s")
             if raw['Conc Tempo'] > 3.0:
                 st.warning("Ascent is slow. Work on explosive power coming out of the hole.")
@@ -315,96 +312,59 @@ if uploaded_file is not None:
                 st.warning("Slight lag between hip and shoulder drive.")
             else:
                 st.success("Perfect hip-shoulder synchronization.")
-
             st.write(f"**Heel Stability:** {int(raw['Heel Lifts'])} lifts detected")
             if raw['Heel Lifts'] > 0:
                 st.error(f"Heel lift detected on {int(raw['Heel Lifts'])} repetitions.")
             else:
                 st.success("Heels remained stable.")
 
+    # Fixed col2 video logic
     with col2:
         st.subheader("Visual Feedback")
         
-        # Option 1: Display annotated frames as images (more reliable)
-        # Option 2: Try different codecs or use MP4V
+        cap = cv2.VideoCapture(temp_input_path)
+        width = int(cap.get(cv2.CAP_PROP_FRAME_WIDTH))
+        height = int(cap.get(cv2.CAP_PROP_FRAME_HEIGHT))
         
-        # Create a temporary file for annotated video
-        output_path = tempfile.NamedTemporaryFile(delete=False, suffix='.mp4').name
-        
-        cap = cv2.VideoCapture(tfile.name)
-        # Try different codecs - 'mp4v' is more universally available
-        #fourcc = cv2.VideoWriter_fourcc(*'mp4v')  
-        # Alternative codecs to try:
-        #fourcc = cv2.VideoWriter_fourcc(*'XVID')  # for .avi
-        fourcc = cv2.VideoWriter_fourcc(*'H264')  # alternative H.264 codec
-        
-        width, height = int(cap.get(3)), int(cap.get(4))
-        fps = int(cap.get(cv2.CAP_PROP_FPS))
-        
-        # Ensure width and height are even numbers (some codecs require this)
-        if width % 2 != 0: width -= 1
-        if height % 2 != 0: height -= 1
-        
-        out = cv2.VideoWriter(output_path, fourcc, fps, (width, height))
+        # Use mp4v for initial internal write
+        out = cv2.VideoWriter(temp_raw_output, cv2.VideoWriter_fourcc(*'mp4v'), fps, (width, height))
 
         pose_map = {p.frame_index: p for p in pose_data}
         metric_map = {m.frame_index: m for m in metrics}
 
-        frame_count = 0
-        progress_bar = st.progress(0)
-        
-        total_frames = int(cap.get(cv2.CAP_PROP_FRAME_COUNT))
-        
-        for f_idx in range(total_frames):
+        for f_idx in range(int(cap.get(cv2.CAP_PROP_FRAME_COUNT))):
             ret, frame = cap.read()
             if not ret: break
             
             if f_idx in pose_map:
-                mp_drawing.draw_landmarks(
-                    frame, 
-                    pose_map[f_idx].raw_landmarks, 
-                    mp_pose.POSE_CONNECTIONS,
-                    landmark_drawing_spec=mp_drawing_styles.get_default_pose_landmarks_style()
-                )
-            
+                mp_drawing.draw_landmarks(frame, pose_map[f_idx].raw_landmarks, mp_pose.POSE_CONNECTIONS,
+                                        landmark_drawing_spec=mp_drawing_styles.get_default_pose_landmarks_style())
             if f_idx in metric_map:
                 m = metric_map[f_idx]
-                cv2.putText(frame, f"Phase: {m.phase}", (30, 50), 
-                          cv2.FONT_HERSHEY_SIMPLEX, 1, (255, 255, 255), 2)
+                cv2.putText(frame, f"Phase: {m.phase}", (30, 50), cv2.FONT_HERSHEY_SIMPLEX, 1, (255,255,255), 2)
                 if m.heel_lift: 
-                    cv2.putText(frame, "HEEL LIFT!", (30, 100), 
-                              cv2.FONT_HERSHEY_SIMPLEX, 1, (0, 0, 255), 2)
-            
+                    cv2.putText(frame, "HEEL LIFT!", (30, 100), cv2.FONT_HERSHEY_SIMPLEX, 1, (0,0,255), 2)
+
             out.write(frame)
-            frame_count += 1
-            
-            # Update progress every 10 frames to avoid too many updates
-            if f_idx % 10 == 0:
-                progress_bar.progress(min(f_idx / total_frames, 1.0))
         
         cap.release()
         out.release()
-        progress_bar.empty()
         
-        # Display Video - using a try-except block
-        try:
-            if os.path.exists(output_path) and os.path.getsize(output_path) > 0:
-                st.video(output_path)
-            else:
-                st.warning("Could not generate annotated video. Displaying original video instead.")
-                st.video(tfile.name)
-        except Exception as e:
-            st.warning(f"Video display error: {str(e)}")
-            st.video(tfile.name)  # Fallback to original video
+        # 6. CONVERT TO WEB-PLAYABLE FORMAT
+        if os.path.exists(temp_raw_output):
+            import subprocess
+            # Wait for conversion to finish. pix_fmt yuv420p is critical for browser support.
+            cmd = f"ffmpeg -i {temp_raw_output} -vcodec libx264 -pix_fmt yuv420p -movflags +faststart {final_web_path} -y"
+            subprocess.run(cmd, shell=True)
             
-    st.sidebar.success("Analysis Finished!")
-    
-    # Clean up temp files
-    try:
-        os.unlink(tfile.name)
-        if os.path.exists(output_path):
-            os.unlink(output_path)
-    except:
-        pass
+            if os.path.exists(final_web_path):
+                # Reading the file into memory ensures Streamlit serves it correctly
+                with open(final_web_path, 'rb') as v_file:
+                    video_bytes = v_file.read()
+                st.video(video_bytes)
+            else:
+                st.error("Processing error. Video could not be converted for display.")
+            
+    st.sidebar.success("Analysis Finished")
 else:
     st.info("Please upload a lateral-view video of your squats to begin.")
