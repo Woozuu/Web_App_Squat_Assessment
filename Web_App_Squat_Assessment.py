@@ -322,7 +322,7 @@ if uploaded_file is not None:
             else:
                 st.success("Heels remained stable.")
 
-       with col2:
+    with col2:
         st.subheader("Visual Feedback")
         
         # Option 1: Display annotated frames as images (more reliable)
