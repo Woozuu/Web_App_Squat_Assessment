@@ -335,8 +335,8 @@ if uploaded_file is not None:
         # Try different codecs - 'mp4v' is more universally available
         #fourcc = cv2.VideoWriter_fourcc(*'mp4v')  
         # Alternative codecs to try:
-        fourcc = cv2.VideoWriter_fourcc(*'XVID')  # for .avi
-        #fourcc = cv2.VideoWriter_fourcc(*'H264')  # alternative H.264 codec
+        #fourcc = cv2.VideoWriter_fourcc(*'XVID')  # for .avi
+        fourcc = cv2.VideoWriter_fourcc(*'H264')  # alternative H.264 codec
         
         width, height = int(cap.get(3)), int(cap.get(4))
         fps = int(cap.get(cv2.CAP_PROP_FPS))
