@@ -232,21 +232,16 @@ st.sidebar.header("Upload Workout")
 uploaded_file = st.sidebar.file_uploader("Choose a video file", type=['mp4', 'mov', 'avi'])
 
 if uploaded_file is not None:
-    # Define paths
-    temp_input_path = "input_video.mp4"
-    temp_raw_output = "raw_annotated.mp4"
-    final_web_path = "final_output.mp4"
-
-    # Save uploaded file to disk
-    with open(temp_input_path, "wb") as f:
-        f.write(uploaded_file.read())
+    # Save uploaded file to temp
+    tfile = tempfile.NamedTemporaryFile(delete=False)
+    tfile.write(uploaded_file.read())
     
     col1, col2 = st.columns([1, 1])
 
     with st.spinner('Analyzing movement...'):
         # 1. Process
         processor = PoseProcessor()
-        pose_data, fps = processor.process_video(temp_input_path)
+        pose_data, fps = processor.process_video(tfile.name)
         
         # 2. Analyze
         analyzer = BiomechanicalAnalyzer()
@@ -328,13 +323,12 @@ if uploaded_file is not None:
 
     with col2:
         st.subheader("Visual Feedback")
-        
-        # Annotate video
-        cap = cv2.VideoCapture(temp_input_path)
+        # Annotate video for web playback
+        output_path = "annotated_video.mp4"
+        cap = cv2.VideoCapture(tfile.name)
+        fourcc = cv2.VideoWriter_fourcc(*'avc1') # H.264 for Web
         width, height = int(cap.get(3)), int(cap.get(4))
-        
-        # Write using mp4v first (it always works on the server)
-        out = cv2.VideoWriter(temp_raw_output, cv2.VideoWriter_fourcc(*'mp4v'), fps, (width, height))
+        out = cv2.VideoWriter(output_path, fourcc, fps, (width, height))
 
         pose_map = {p.frame_index: p for p in pose_data}
         metric_map = {m.frame_index: m for m in metrics}
@@ -356,15 +350,9 @@ if uploaded_file is not None:
         cap.release()
         out.release()
         
-        # CONVERT TO WEB-FRIENDLY H.264 USING FFMPEG
-        if os.path.exists(temp_raw_output):
-            # This system command re-encodes the video so it is playable in browsers
-            os.system(f"ffmpeg -i {temp_raw_output} -vcodec libx264 -crf 28 {final_web_path} -y")
-            
-            if os.path.exists(final_web_path):
-                st.video(final_web_path)
-            else:
-                st.error("Video conversion failed.")
+        # Display Video
+        if os.path.exists(output_path):
+            st.video(output_path)
             
     st.sidebar.success("Analysis Finished!")
 else:
