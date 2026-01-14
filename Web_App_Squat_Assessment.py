@@ -322,37 +322,52 @@ if uploaded_file is not None:
                 st.success("Heels remained stable.")
 
     with col2:
-        st.subheader("Visual Feedback")
-        # Annotate video for web playback
-        output_path = "annotated_video.mp4"
-        cap = cv2.VideoCapture(tfile.name)
-        fourcc = cv2.VideoWriter_fourcc(*'avc1') # H.264 for Web
-        width, height = int(cap.get(3)), int(cap.get(4))
-        out = cv2.VideoWriter(output_path, fourcc, fps, (width, height))
-
-        pose_map = {p.frame_index: p for p in pose_data}
-        metric_map = {m.frame_index: m for m in metrics}
-
-        for f_idx in range(int(cap.get(cv2.CAP_PROP_FRAME_COUNT))):
-            ret, frame = cap.read()
-            if not ret: break
+            st.subheader("Visual Feedback")
+            cap = cv2.VideoCapture(temp_input_path)
             
-            if f_idx in pose_map:
-                mp_drawing.draw_landmarks(frame, pose_map[f_idx].raw_landmarks, mp_pose.POSE_CONNECTIONS,
-                                        landmark_drawing_spec=mp_drawing_styles.get_default_pose_landmarks_style())
-            if f_idx in metric_map:
-                m = metric_map[f_idx]
-                cv2.putText(frame, f"Phase: {m.phase}", (30, 50), cv2.FONT_HERSHEY_SIMPLEX, 1, (255,255,255), 2)
-                if m.heel_lift: cv2.putText(frame, "HEEL LIFT!", (30, 100), cv2.FONT_HERSHEY_SIMPLEX, 1, (0,0,255), 2)
+            # Change codec to mp4v for better Linux compatibility
+            fourcc = cv2.VideoWriter_fourcc(*'mp4v') 
+            
+            width = int(cap.get(cv2.CAP_PROP_FRAME_WIDTH))
+            height = int(cap.get(cv2.CAP_PROP_FRAME_HEIGHT))
+            fps = cap.get(cv2.CAP_PROP_FPS)
+            
+            # If FPS is invalid, default to 30
+            if fps <= 0: fps = 30 
 
-            out.write(frame)
-        
-        cap.release()
-        out.release()
-        
-        # Display Video
-        if os.path.exists(output_path):
-            st.video(output_path)
+            out = cv2.VideoWriter(temp_output_path, fourcc, fps, (width, height))
+
+            pose_map = {p.frame_index: p for p in pose_data}
+            metric_map = {m.frame_index: m for m in metrics}
+
+            # Loop through the video frames
+            for f_idx in range(int(cap.get(cv2.CAP_PROP_FRAME_COUNT))):
+                ret, frame = cap.read()
+                if not ret: break
+                
+                # Draw skeleton
+                if f_idx in pose_map:
+                    mp_drawing.draw_landmarks(
+                        frame, 
+                        pose_map[f_idx].raw_landmarks, 
+                        mp_pose.POSE_CONNECTIONS,
+                        landmark_drawing_spec=mp_drawing_styles.get_default_pose_landmarks_style()
+                    )
+                
+                # Draw Phase Text
+                if f_idx in metric_map:
+                    m = metric_map[f_idx]
+                    cv2.putText(frame, f"Phase: {m.phase}", (30, 50), 
+                                cv2.FONT_HERSHEY_SIMPLEX, 1, (255, 255, 255), 2)
+                
+                out.write(frame)
+            
+            cap.release()
+            out.release()
+            
+            # Display the video
+            if os.path.exists(temp_output_path):
+                st.video(temp_output_path)
             
     st.sidebar.success("Analysis Finished!")
 else:
