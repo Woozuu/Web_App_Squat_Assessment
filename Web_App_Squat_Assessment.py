@@ -233,8 +233,9 @@ uploaded_file = st.sidebar.file_uploader("Choose a video file", type=['mp4', 'mo
 
 if uploaded_file is not None:
     # Save uploaded file to temp
-    tfile = tempfile.NamedTemporaryFile(delete=False)
+    tfile = tempfile.NamedTemporaryFile(delete=False, suffix='.mp4')
     tfile.write(uploaded_file.read())
+    tfile.flush()  # Ensure file is written
     
     col1, col2 = st.columns([1, 1])
 
@@ -323,37 +324,87 @@ if uploaded_file is not None:
 
     with col2:
         st.subheader("Visual Feedback")
-        # Annotate video for web playback
-        output_path = "annotated_video.mp4"
+        
+        # Option 1: Display annotated frames as images (more reliable)
+        # Option 2: Try different codecs or use MP4V
+        
+        # Create a temporary file for annotated video
+        output_path = tempfile.NamedTemporaryFile(delete=False, suffix='.mp4').name
+        
         cap = cv2.VideoCapture(tfile.name)
-        fourcc = cv2.VideoWriter_fourcc(*'avc1') # H.264 for Web
+        # Try different codecs - 'mp4v' is more universally available
+        fourcc = cv2.VideoWriter_fourcc(*'mp4v')  
+        # Alternative codecs to try:
+        # fourcc = cv2.VideoWriter_fourcc(*'XVID')  # for .avi
+        # fourcc = cv2.VideoWriter_fourcc(*'H264')  # alternative H.264 codec
+        
         width, height = int(cap.get(3)), int(cap.get(4))
+        fps = int(cap.get(cv2.CAP_PROP_FPS))
+        
+        # Ensure width and height are even numbers (some codecs require this)
+        if width % 2 != 0: width -= 1
+        if height % 2 != 0: height -= 1
+        
         out = cv2.VideoWriter(output_path, fourcc, fps, (width, height))
 
         pose_map = {p.frame_index: p for p in pose_data}
         metric_map = {m.frame_index: m for m in metrics}
 
-        for f_idx in range(int(cap.get(cv2.CAP_PROP_FRAME_COUNT))):
+        frame_count = 0
+        progress_bar = st.progress(0)
+        
+        total_frames = int(cap.get(cv2.CAP_PROP_FRAME_COUNT))
+        
+        for f_idx in range(total_frames):
             ret, frame = cap.read()
             if not ret: break
             
             if f_idx in pose_map:
-                mp_drawing.draw_landmarks(frame, pose_map[f_idx].raw_landmarks, mp_pose.POSE_CONNECTIONS,
-                                        landmark_drawing_spec=mp_drawing_styles.get_default_pose_landmarks_style())
+                mp_drawing.draw_landmarks(
+                    frame, 
+                    pose_map[f_idx].raw_landmarks, 
+                    mp_pose.POSE_CONNECTIONS,
+                    landmark_drawing_spec=mp_drawing_styles.get_default_pose_landmarks_style()
+                )
+            
             if f_idx in metric_map:
                 m = metric_map[f_idx]
-                cv2.putText(frame, f"Phase: {m.phase}", (30, 50), cv2.FONT_HERSHEY_SIMPLEX, 1, (255,255,255), 2)
-                if m.heel_lift: cv2.putText(frame, "HEEL LIFT!", (30, 100), cv2.FONT_HERSHEY_SIMPLEX, 1, (0,0,255), 2)
-
+                cv2.putText(frame, f"Phase: {m.phase}", (30, 50), 
+                          cv2.FONT_HERSHEY_SIMPLEX, 1, (255, 255, 255), 2)
+                if m.heel_lift: 
+                    cv2.putText(frame, "HEEL LIFT!", (30, 100), 
+                              cv2.FONT_HERSHEY_SIMPLEX, 1, (0, 0, 255), 2)
+            
             out.write(frame)
+            frame_count += 1
+            
+            # Update progress every 10 frames to avoid too many updates
+            if f_idx % 10 == 0:
+                progress_bar.progress(min(f_idx / total_frames, 1.0))
         
         cap.release()
         out.release()
+        progress_bar.empty()
         
-        # Display Video
-        if os.path.exists(output_path):
-            st.video(output_path)
+        # Display Video - using a try-except block
+        try:
+            if os.path.exists(output_path) and os.path.getsize(output_path) > 0:
+                st.video(output_path)
+            else:
+                st.warning("Could not generate annotated video. Displaying original video instead.")
+                st.video(tfile.name)
+        except Exception as e:
+            st.warning(f"Video display error: {str(e)}")
+            st.video(tfile.name)  # Fallback to original video
             
     st.sidebar.success("Analysis Finished!")
+    
+    # Clean up temp files
+    try:
+        os.unlink(tfile.name)
+        if os.path.exists(output_path):
+            os.unlink(output_path)
+    except:
+        pass
 else:
     st.info("Please upload a lateral-view video of your squats to begin.")
