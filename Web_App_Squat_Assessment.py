@@ -125,7 +125,7 @@ class BiomechanicalAnalyzer:
         angles = pd.Series([m.knee_angle for m in metrics]).rolling(5, center=True).mean().fillna(method='bfill').values
         for i in range(1, len(metrics)):
             diff = angles[i] - angles[i-1]
-            if angles[i] > 160: phase = "START"
+            if angles[i] > 150: phase = "START"
             elif diff < -0.5: phase = "DESCENT"
             elif abs(diff) < 0.2 and metrics[i-1].phase == "DESCENT": phase = "BOTTOM"
             elif diff > 0.5: phase = "ASCENT"
